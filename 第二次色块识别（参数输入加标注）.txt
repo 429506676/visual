@@ -1,0 +1,78 @@
+import cv2
+import numpy as np
+
+def callback(object):  #注意这里createTrackbar会向其传入参数即滑动条地址（几乎用不到），所以必须写一个参数
+    pass
+
+def center(img,x,y,w,h):
+    if(h > w*1.5):
+        cv2.putText(img, f"({x + w / 2},{y + h / 4})", (int(x + w / 2), int(y + h / 4)), cv2.FONT_HERSHEY_SIMPLEX, 0.4,(255, 255, 0))
+        cv2.putText(img, f"({x + w / 2},{y + h * 3 / 4})", (int(x + w / 2),int(y + h * 3 / 4) ), cv2.FONT_HERSHEY_SIMPLEX, 0.4,(255, 255, 0))
+    elif(w > h*1.5):
+        cv2.putText(img, f"({x + w / 4},{y + h / 2})", (int(x + w / 4), int(y + h / 2)), cv2.FONT_HERSHEY_SIMPLEX, 0.4,(255, 255, 0))
+        cv2.putText(img, f"({x + w*3 / 4},{y + h / 2})", (int(x + w*3 / 4),int(y + h / 2) ), cv2.FONT_HERSHEY_SIMPLEX, 0.4,(255, 255, 0))
+    else:
+        cv2.putText(img, f"({x + w / 2},{y + h / 2})", (int(x + w / 2),int(y + h /  2)), cv2.FONT_HERSHEY_SIMPLEX, 0.4, (255, 255, 0))
+
+imgorg= cv2.imread(r"D:\Desktop\view\week_work.jpg")
+bgr = imgorg
+img = imgorg
+end = input("输入希望处理的图片类型:")
+if(end.lower() == "bgr"):
+    pass
+elif(end.lower() == "hsv"):
+    img = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
+    imgorg = img
+elif(end.lower() == "lab"):
+    img = cv2.cvtColor(img, cv2.COLOR_BGR2LAB)
+    imgorg = img
+elif(end.lower() == "yuv"):
+    img = cv2.cvtColor(img, cv2.COLOR_BGR2YUV)
+    imgorg = img
+else:
+    print("不会输入就BGR得了")
+ms = input("输入需要的三个通道筛选时分别的Min和Max:").split(" ")
+for m in range(6):
+    ms[m] = int(ms[m])
+# print(ms)
+
+minBGR = np.array([ms[0], ms[2], ms[4]])
+maxBGR = np.array([ms[1], ms[3], ms[5]])
+# print(minBGR,maxBGR)
+
+maskBGR = cv2.inRange(img, minBGR, maxBGR)
+# cv2.imshow('maskBGR',maskBGR)
+resultBGR = cv2.bitwise_and(img, img, mask=maskBGR)
+
+bgr = cv2.bitwise_and(bgr, bgr, mask=maskBGR)
+
+Contours,ret= cv2.findContours(maskBGR,cv2.RETR_TREE,cv2.CHAIN_APPROX_SIMPLE)
+# print(Contours)
+
+cv2.drawContours(resultBGR,Contours,-1,(0,0,255),2)
+
+
+for Contour in Contours:
+    x, y, w, h = cv2.boundingRect(Contour)
+    if(cv2.contourArea(Contour) <= 5000 or (w*h) >= 40000):
+        continue
+    print(cv2.contourArea(Contour))
+    print(w*h)
+    cv2.rectangle(bgr, (x, y), (x + w, y + h), (0, 255, 0), 2)
+    cv2.rectangle(resultBGR, (x, y), (x + w, y + h), (0, 255, 0), 2)
+    center(bgr, x, y, w, h)
+    center(resultBGR, x, y, w, h)
+
+
+cv2.imshow('resultBGR', resultBGR)
+cv2.imshow('bgr',bgr)
+
+# cv2.imshow('end',end)
+cv2.waitKey(0)
+cv2.destroyAllWindows()
+
+
+#BGR参数:蓝色:61 185 30 132 8 71     红色:13 81 20 73 77 205
+#HSV参数:蓝色:93 113 54 245 41 204   红色:0 179 170 216 85 207
+#YUV参数:蓝色:2 154 133 176 61 136   红色:41 110 107 122 162 225
+#LAB参数:蓝色:31 139 118 136 79 122  红色:46 126 149 189 140 167

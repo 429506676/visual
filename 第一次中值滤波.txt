@@ -1,0 +1,98 @@
+import cv2
+import numpy as np
+
+def endit(ones):                        #对滑块内部进行取中值
+    a = []
+    for i in range(3):
+        a.append(ones[0][i])
+    for i in range(3):
+        a.append(ones[1][i])
+    for i in range(3):
+        a.append(ones[2][i])
+    a.sort()
+    # print(a)
+    return a[4]
+
+
+
+kernel = np.ones((3,3),np.uint8)
+imgorg = cv2.imread(r"D:\Desktop\view\text.jpg")
+img = imgorg.copy()
+gray = cv2.cvtColor(img,cv2.COLOR_BGR2GRAY)
+# print(img.shape)
+H,W,N = img.shape
+pos = 0
+def fuzhi(poss,kernell):               #对各个位置的滑块赋值
+    hang = int(poss//W)
+    lie = int((poss-1) % W)
+    for i in range(3):
+        kernell[i,0] = gray[hang + i,lie]
+        kernell[i, 1] = gray[hang + i, lie+1]
+        kernell[i, 2] = gray[hang + i, lie+2]
+    # print(kernel[:][:])
+    # print(hang + i, lie+2)
+
+
+def blur(poss):                    #进行滤波操作函数
+    g = []
+    b = []
+    r = []
+    hang = int(poss // W)
+    lie = int((poss - 1) % W)
+    # print(hang,lie)
+    for i in range(3):
+        g.append(img[hang - 1][lie - 1 + i][0])
+        b.append(img[hang - 1][lie - 1 + i][1])
+        r.append(img[hang - 1][lie - 1 + i][2])
+    for i in range(3):
+        g.append(img[hang][lie - 1 + i][0])
+        b.append(img[hang][lie - 1 + i][1])
+        r.append(img[hang][lie - 1 + i][2])
+    for i in range(3):
+        g.append(img[hang + 1][lie - 1 + i][0])
+        b.append(img[hang + 1][lie - 1 + i][1])
+        r.append(img[hang + 1][lie - 1 + i][2])
+    g.sort()
+    b.sort()
+    r.sort()
+    img[hang][lie][:] = (g[4],b[4],r[4])
+
+# print(img.shape)    (549, 533, 3)
+# print(img[0,0,0])
+
+wrongs = []
+while(pos <= (W*(H-2)-2)):                 #查找噪音点并保存至wrongs[]
+    pos = pos+1
+    # print(pos)
+    fuzhi(pos,kernel)
+    # print(int(kernel[1][1]),int(endit(kernel)))
+    if(int(kernel[1][1])-int(endit(kernel))>30):
+        wrongs.append(pos+W+1)
+
+    if (pos % W == (W-2)):
+        pos = pos + 2
+
+# print(wrongs)
+# print(len(wrongs))
+wrongs.reverse()
+for i in range(len(wrongs)):                       #正式滤波处理
+    blur(wrongs.pop())
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+cv2.imshow("img",img)
+cv2.imshow("imgorg",imgorg)
+# cv2.imshow("gray",gray)
+cv2.waitKey(0)
+cv2.destroyAllWindows()

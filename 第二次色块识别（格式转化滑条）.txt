@@ -1,0 +1,53 @@
+import cv2
+import numpy as np
+
+def callback(object):  #注意这里createTrackbar会向其传入参数即滑动条地址（几乎用不到），所以必须写一个参数
+    pass
+
+imgorg= cv2.imread(r"D:\Desktop\view\week_work.jpg")
+img = imgorg
+end = input("输入希望处理的图片类型:")                        #获取用户想要的图片类型
+if(end.lower() == "bgr"):
+    pass
+elif(end.lower() == "hsv"):
+    img = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
+    imgorg = img
+elif(end.lower() == "lab"):
+    img = cv2.cvtColor(img, cv2.COLOR_BGR2LAB)
+    imgorg = img
+elif(end.lower() == "yuv"):
+    img = cv2.cvtColor(img, cv2.COLOR_BGR2YUV)
+    imgorg = img
+else:
+    print("不会输入就BGR得了")
+cv2.imshow('img',img)
+                                                    # 创建7个滑动条以调节参数
+switch = '0:OFF\n1:ON'
+cv2.createTrackbar(switch, 'img', 0, 1, callback)
+for j in range(3):
+    cv2.createTrackbar(f"{end[j]}Min", 'img', 0, 255, callback)
+    cv2.createTrackbar(f"{end[j]}Max", 'img', 0, 255, callback)
+while (1):
+    ms = {}
+    for i in range(3):
+        # print(i)
+        # print(end[i])
+        ms[i*2] = cv2.getTrackbarPos(f"{end[i]}Min", 'img')
+        ms[i*2+1] = cv2.getTrackbarPos(f"{end[i]}Max", 'img')
+        print(ms)
+    if cv2.getTrackbarPos(switch, 'img') == 1:  # 为1则画
+        minBGR = np.array([ms[0], ms[2], ms[4]])
+        maxBGR = np.array([ms[1], ms[3], ms[5]])
+
+        maskBGR = cv2.inRange(img, minBGR, maxBGR)
+        ms = {}
+        # print(maskBGR)
+        resultBGR = cv2.bitwise_and(img, img, mask=maskBGR)
+        # print(resultBGR)
+        cv2.imshow('img', resultBGR)
+    else:  # 为0则清除为原图
+        img = imgorg
+        cv2.imshow('img',img)
+    if cv2.waitKey(10) & 0xFF == 27:  # 按esc退出
+        break
+cv2.destroyAllWindows()
