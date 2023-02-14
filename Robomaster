@@ -1,0 +1,130 @@
+import cv2
+import numpy as np
+import math
+from kalman_filter import KalmanFilter
+import test_tracking
+
+def exchange(exframe,end):
+    if(end.lower() == "bgr"):
+        pass
+    elif(end.lower() == "hsv"):
+        exframe = cv2.cvtColor(exframe, cv2.COLOR_BGR2HSV)
+    elif(end.lower() == "lab"):
+        exframe = cv2.cvtColor(exframe, cv2.COLOR_BGR2LAB)
+    elif(end.lower() == "yuv"):
+        exframe = cv2.cvtColor(exframe, cv2.COLOR_BGR2YUV)
+    else:
+        pass
+    return exframe
+
+def chuli(chuliframe,landh):#将图片处理为roi提取格式
+    framee = exchange(chuliframe, 'hsv')
+    framee = cv2.medianBlur(framee, 5)
+    Canny = cv2.Canny(framee, 0, 255)
+    lower_hsv = np.array([landh[0], landh[2], landh[4]])
+    upper_hsv = np.array([landh[1], landh[3], landh[5]])
+    mask = cv2.inRange(framee, lowerb=lower_hsv, upperb=upper_hsv)
+    kernel = np.ones((3, 3), np.uint8)
+    dilate = cv2.dilate(mask, kernel, iterations=1)
+    return dilate
+
+
+
+
+cap = cv2.VideoCapture(r"D:Desktop\view\goal.mp4")
+
+# goal = input("输入希望处理的图片类型:")
+# goal = 'hsv'
+boxs = []#用来进行追踪
+max = 1
+min = 5
+while cap.isOpened():
+    ret,frameorg = cap.read()
+    frameorg = cv2.resize(frameorg, (640, 480))
+    frame = frameorg
+
+
+    hsvlight = np.array([125,187,0,255,86,255])#分别是灯和数字的参数设置
+    hsvfive = np.array([42,140,49,229,19,255])
+
+    liend = chuli(frame,hsvlight)
+    fiend = chuli(frame,hsvfive)
+#得到roi提取的黑白图
+    mask =  liend
+#在roi上得到轮廓
+    threshCnts, hierarchy = cv2.findContours(mask, cv2.RETR_LIST, cv2.CHAIN_APPROX_NONE)
+    # print(len(threshCnts))
+    # print(hierarchy)
+    lightCnts = []
+    angles = []
+    xs = []
+
+    for p in range(len(threshCnts)):
+         if (p % 2 == 0):
+            mid = threshCnts[p]
+            continue
+         else:
+             bothCnt = np.concatenate([mid,threshCnts[p]])
+         # n = len(threshCnts)#看一下有几个轮廓
+         # print(n)
+         #     x, y, w, h = cv2.boundingRect(bothCnt)
+             rect = cv2.minAreaRect(bothCnt)
+         box = cv2.boxPoints(rect)
+         box = np.int0(box)#让box取整
+
+         # print(box)
+         # print(rect)
+         # print([box])
+         # cv2.drawContours(frame, [box], 0, (255, 255, 0), 2)#最小外接矩形绘制
+         # cv2.rectangle(frame, (x, y), (x + w, y + h), (255, 255, 255), 2)#垂直矩形绘制
+         #计算最小外接矩形的
+         lline = rect[1][0]
+         sline = rect[1][1]
+         if (sline >= lline):
+             q = lline
+             lline = sline
+             sline = q
+
+         pro = lline/sline
+         if (pro >= max):
+             max = pro
+         elif (pro <= min):
+             min = pro
+
+         # print(pro)
+         if (pro >= 1 and pro <= 6):
+             cv2.drawContours(frame, [box], 0, (255, 255, 0), 2)
+             lightCnts.append([box])
+             angles.append(rect[2])
+             xs.append(rect[0][0])
+             # if (rect[1][0]<=rect[1][1]):
+             #     x1 = np.int0(x - 0.75 * w)
+             #     y1 = np.int0(y - 0.75 * h)
+             #     x2 = np.int0(x + 1.75 * w)
+             #     y2 = np.int0(y + 1.75 * h)
+             # else:
+             #     x1 = np.int0(x + 0.75 * w)
+             #     y1 = np.int0(y - 0.75 * w)
+             #     x2 = np.int0(x - 1.75 * w)
+             #     y2 = np.int0(y + 1.75 * h)
+             #
+             # cv2.rectangle(frame, (x1, y1), (x2, y2), (255, 255, 255), 2)
+
+         #     print(angles)
+         #     print(len(lightCnts))
+         # print(lightCnts)
+         print(f'max:{max},min:{min}')
+
+    cv2.imshow('mask', mask)
+    cv2.imshow('frame',frame)
+    # if(len(threshCnts)>4):
+    #     print(len(threshCnts))
+    #     print('不对劲')
+    #     break
+
+
+
+    if cv2.waitKey(50) & 0xFF == 27:
+        break
+cap.release()
+cv2.destroyAllWindows()
