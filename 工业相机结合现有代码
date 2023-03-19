@@ -1,0 +1,232 @@
+import numpy as np
+import cv2
+import mvsdk
+import glob
+
+def  morphologyEx(image,kernel,times):  #闭运算 输入参数 ：图片 核 迭代次数
+    sqKernel = cv2.getStructuringElement(cv2.MORPH_RECT, (kernel, kernel))
+    mask = cv2.morphologyEx(image, cv2.MORPH_CLOSE, sqKernel, iterations=times)
+    return mask
+def Contrast_and_Brightness(alpha, beta, img):
+    blank = np.zeros(img.shape, img.dtype)
+    # dst = alpha * img + (1-alpha) * blank + beta
+    dst = cv2.addWeighted(img, alpha, blank, 1 - alpha, beta)
+    return dst
+def camera_calibration():  #相机标定函数,得到畸变系数和内参,然后读取输入的图片，得到全新的畸变系数和内参（理论上应该是一致的，存在误差，误差越接近0越好）
+    # 找棋盘格角点
+    # criteria:角点精准化迭代过程的终止条件
+    global objpoints
+    global imgpoints
+    global mtx
+    global dist
+    global rvecs
+    global tvecs
+    criteria = (cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER, 30, 0.001)
+    # 棋盘格模板规格 ,内角点
+    w = 11
+    h = 8
+    # 世界坐标系中的棋盘格点,例如(0,0,0), (1,0,0), (2,0,0) ....,(8,5,0)，去掉Z坐标，记为二维矩阵
+    objp = np.zeros((w * h, 3), np.float32)
+    objp[:, :2] = np.mgrid[0:w, 0:h].T.reshape(-1, 2)
+    # 储存棋盘格角点的世界坐标和图像坐标对
+    '''
+    设定世界坐标下点的坐标值，因为用的是棋盘可以直接按网格取；
+    假定棋盘正好在x-y平面上，这样z值直接取0，简化初始化步骤。
+    mgrid把列向量[0:cbraw]复制了cbcol列，把行向量[0:cbcol]复制了cbraw行。
+    转置reshape后，每行都是4×6网格中的某个点的坐标。
+    '''
+    objpoints = []  # 在世界坐标系中的三维点
+    imgpoints = []  # 在图像平面的二维点
+    allcorners = []
+    images = glob.glob('D:/ANACONDA/camera_calibration_0/*.jpg')  #标定板的图片
+    for fname in images:
+        img = cv2.imread(fname)
+        gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+        # cv_show('gray', gray)
+        # 找到棋盘格角点
+        ret, corners = cv2.findChessboardCorners(gray, (w, h),
+                                             None)  # 如果找到足够点对，将其存储起来，corners用于存储检测到的内角点图像坐标位置,ret是找到角点的flag
+        allcorners.append(corners)  # 把所有角点保存起来
+        if ret == True:
+            # 执行亚像素级角点检测,为了提高标定精度，需要在初步提取的角点信息上进一步提取亚像素信息，降低相机标定偏差,亚像素就是两个像素之间的无限小的存在（意思是说，在两个物理像素之间还有像素，因为太小而无法用仪器测量，只能通过计算得到）
+            corners2 = cv2.cornerSubPix(gray, corners, (11, 11), (-1, -1), criteria)
+            objpoints.append(objp)
+            imgpoints.append(corners2)
+    ret, mtx, dist, rvecs, tvecs = cv2.calibrateCamera(objpoints, imgpoints, gray.shape[::-1], None, None)
+
+#camera_calibration()
+
+DevList = mvsdk.CameraEnumerateDevice()
+#cap = cv2.VideoCapture(r"F:\xitong\red.mp4")
+nDev = len(DevList)
+for i, DevInfo in enumerate(DevList):
+    print("{}: {} {}".format(i, DevInfo.GetFriendlyName(), DevInfo.GetPortType()))
+DevInfo = DevList[0]
+hCamera=0
+try:
+    hCamera = mvsdk.CameraInit(DevInfo, -1, -1)
+except mvsdk.CameraException as e:
+    print("CameraInit Failed({}): {}".format(e.error_code, e.message))
+#print(hCamera)
+# 获取相机特性描述
+cap = mvsdk.CameraGetCapability(hCamera)
+
+# 判断是黑白相机还是彩色相机
+monoCamera = (cap.sIspCapacity.bMonoSensor != 0)
+
+# 黑白相机让ISP直接输出MONO数据，而不是扩展成R=G=B的24位灰度
+if monoCamera:
+	mvsdk.CameraSetIspOutFormat(hCamera, mvsdk.CAMERA_MEDIA_TYPE_MONO8)
+else:
+	mvsdk.CameraSetIspOutFormat(hCamera, mvsdk.CAMERA_MEDIA_TYPE_BGR8)
+
+# 相机模式切换成连续采集
+mvsdk.CameraSetTriggerMode(hCamera, 0)
+
+# 手动曝光，曝光时间2ms
+mvsdk.CameraSetAeState(hCamera, 2)
+mvsdk.CameraSetExposureTime(hCamera, 2* 1000)
+#mvsdk.CameraSetExposureTime(hCamera, 10 * 1000)
+
+#设置颜色通道的增益
+mvsdk.CameraSetGain(hCamera,139,92,83)
+
+#设置模拟增益
+mvsdk.CameraSetAnalogGain(hCamera,4)
+
+#设定饱和度
+mvsdk.CameraSetSaturation(hCamera,200)
+
+mvsdk.CameraPlay(hCamera)
+
+# 计算RGB buffer所需的大小，这里直接按照相机的最大分辨率来分配
+FrameBufferSize = cap.sResolutionRange.iWidthMax * cap.sResolutionRange.iHeightMax * (1 if monoCamera else 3)
+# 分配RGB buffer，用来存放ISP输出的图像
+# 备注：从相机传输到PC端的是RAW数据，在PC端通过软件ISP转为RGB数据（如果是黑白相机就不需要转换格式，但是ISP还有其它处理，所以也需要分配这个buffer
+pFrameBuffer = mvsdk.CameraAlignMalloc(FrameBufferSize, 16)
+
+#mvsdk.CameraReadParameterFromFile(hCamera,r"C:\Users\86136\Documents\second_camera.Config")
+
+#mvsdk.CameraInitRecord(hCamera,0,r'D:\ANACONDA\jpg_or_mp4\armour.mp4',100,100)  #开启视频录制
+
+while True:
+    pRawData, FrameHead = mvsdk.CameraGetImageBuffer(hCamera, 3000)  # 00s 超时返回错误
+    mvsdk.CameraImageProcess(hCamera, pRawData, pFrameBuffer, FrameHead)  # 给增益，载入曝光等参数
+    mvsdk.CameraReleaseImageBuffer(hCamera, pRawData)
+    kernel = np.ones((4, 4), np.uint8)
+    monoCamera = (cap.sIspCapacity.bMonoSensor != 0)
+
+    frame_data = (mvsdk.c_ubyte * FrameHead.uBytes).from_address(pFrameBuffer)
+    frame = np.frombuffer(frame_data, dtype=np.uint8)
+    frame = frame.reshape(
+        (FrameHead.iHeight, FrameHead.iWidth, 1 if FrameHead.uiMediaType == mvsdk.CAMERA_MEDIA_TYPE_MONO8 else 3))
+
+    #ret, frame = cap.read()  ##ret返回布尔量q
+    #frame = cv2.medianBlur(frame, 3)#这个函数帧率太低
+    try:
+
+        frame = cv2.resize(frame, (640, 480),interpolation = cv2.INTER_AREA)
+    except:
+        break
+
+    frame1 = Contrast_and_Brightness(2, -100, frame)
+    # 对比度，亮度
+    frame = Contrast_and_Brightness(2, 50, frame)
+    gray = cv2.cvtColor(frame1, cv2.COLOR_BGR2GRAY)
+    ret, thresh = cv2.threshold(gray, 127, 255, cv2.THRESH_BINARY)
+
+    # 通道分离，红色装甲板r-b,蓝色b-r
+    B, G, R = cv2.split(frame1)
+    BR = B-R
+    RB = R-B
+    BR = cv2.GaussianBlur(RB, (5, 5), 0)
+    draw_img = RB.copy()
+    ret2, thresh2 = cv2.threshold(draw_img, 110, 255, cv2.THRESH_BINARY)
+    dilate = cv2.dilate(thresh2, kernel, 1)
+
+
+    img_and = cv2.bitwise_and(thresh, dilate)
+    dilate2 = cv2.dilate(img_and, kernel, 1)
+    mask = morphologyEx(dilate2, 5, 2)
+    #cv2.imshow('mask',mask)
+
+    whole_h, whole_w = frame.shape[:2]
+    #img.shape[:2]取彩色图片的长和宽
+
+    contours, hier = cv2.findContours(mask, cv2.RETR_TREE,cv2.CHAIN_APPROX_NONE)
+
+
+
+
+    contours = list(contours)
+    contours.sort(key=lambda c: cv2.contourArea(c), reverse=True)
+    width_array = []
+    height_array = []
+    point_array = []
+
+    for c in range(len(contours)):
+        rect = cv2.minAreaRect(contours[c])
+        box = cv2.boxPoints(rect)  # 返回矩形四个角点坐标
+        box = np.int0(box)  # 获得矩形角点坐标(整数)
+        #cv2.drawContours(frame, [box], -1, (0, 255, 255), 2)
+
+
+
+
+#5可能代表了前五个
+    for cont in contours[:5]:
+        x, y, w, h = cv2.boundingRect(cont)
+        #Light_Rec = cv2.fitEllipse(cont)
+
+        try:
+            if h / w >= 1.7:
+
+                    width_array.append(w)
+                    height_array.append(h)
+                    point_array.append([x, y])
+        except:
+            continue
+        point_near = [0, 0]
+        min = 100
+        for i in range(len(width_array) - 1):
+            for j in range(i + 1, len(width_array)):
+                value = abs(width_array[i] * height_array[i] - width_array[j] * height_array[j])
+                if value < min:
+                    min = value
+                    point_near[0] = i
+                    point_near[1] = j
+        try:
+            rectangle1 = point_array[point_near[0]]
+            rectangle2 = point_array[point_near[1]]
+            point1 = [rectangle1[0] + width_array[point_near[0]] / 2, rectangle1[1]]
+            point2 = [rectangle1[0] + width_array[point_near[0]] / 2, rectangle1[1] + height_array[point_near[0]]]
+            point3 = [rectangle2[0] + width_array[point_near[1]] / 2, rectangle2[1]]
+            point4 = [rectangle2[0] + width_array[point_near[1]] / 2, rectangle2[1] + height_array[point_near[1]]]
+
+            #print(point1, point2, point3, point4)
+            dis = pow(pow((point1[0]-point3[0]),2)+pow((point1[1]-point3[1]),2),0.5)
+            high = pow(pow((point1[0]-point2[0]),2)+pow((point1[1]-point2[1]),2),0.5)
+            #print(dis)
+            if dis /high < 2.3 and dis/high >1.8 :
+                #print(dis/high)
+                x = np.array([point1, point2, point4, point3], np.int32)
+                box = x.reshape((-1, 1, 2)).astype(np.int32)
+                cv2.polylines(frame, [box], True, (255,0,255), 2)
+        except:
+            continue
+
+
+
+    #cv2.imshow('b-r',BR)
+    #cv2.imshow("dilate2", dilate2)
+
+    cv2.imshow('frame',frame)
+    if cv2.waitKey(1) & 0xFF == ord('q'):
+        break
+
+#cap.release()
+cv2.destroyAllWindows()
+mvsdk.CameraUnInit(hCamera)
+# 释放帧缓存
+#mvsdk.CameraAlignFree(pFrameBuffer)
+cv2.destroyAllWindows()
